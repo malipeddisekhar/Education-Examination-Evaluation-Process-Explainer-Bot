@@ -21,6 +21,7 @@ import base64
 import tempfile
 from dotenv import load_dotenv
 import streamlit as st
+import streamlit.components.v1 as stcomp
 from PyPDF2 import PdfReader
 from langchain_text_splitters import CharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -227,8 +228,9 @@ def load_vectorstore():
 # LLM INITIALIZATION (Groq)
 # ============================================================
 
+@st.cache_resource(show_spinner=False)
 def get_groq_client():
-    """Initialize the Groq client."""
+    """Initialize and cache the Groq client (one-time, survives reruns)."""
     return Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
@@ -237,23 +239,42 @@ def get_groq_client():
 # ============================================================
 
 def transcribe_audio(audio_file):
-    """Convert recorded audio to text using SpeechRecognition (Google Web API)."""
-    recognizer = sr.Recognizer()
+    """Fast transcription using Groq Whisper API.
+    Accepts WebM/Opus directly from browser — no conversion needed."""
     try:
-        # audio_file is a Streamlit UploadedFile (BytesIO-like)
         audio_file.seek(0)
-        with sr.AudioFile(audio_file) as source:
-            audio_data = recognizer.record(source)
-        text = recognizer.recognize_google(audio_data)
-        return text
-    except sr.UnknownValueError:
-        return None
-    except sr.RequestError as e:
-        st.warning(f"⚠️ Speech recognition service unavailable: {e}")
-        return None
+        raw_bytes = audio_file.read()
+        audio_file.seek(0)
+        if not raw_bytes or len(raw_bytes) < 100:
+            return None
+        client = get_groq_client()
+        # Groq Whisper accepts WebM, WAV, MP3, OGG, FLAC natively
+        transcription = client.audio.transcriptions.create(
+            file=("audio.webm", raw_bytes, "audio/webm"),
+            model="whisper-large-v3-turbo",
+            response_format="text",
+            language="en",
+        )
+        result = transcription.strip() if isinstance(transcription, str) else str(transcription).strip()
+        return result if result else None
     except Exception as e:
-        st.warning(f"⚠️ Audio processing error: {e}")
-        return None
+        # Fallback to Google STT if Groq Whisper fails
+        try:
+            recognizer = sr.Recognizer()
+            audio_file.seek(0)
+            raw_bytes = audio_file.read()
+            audio_file.seek(0)
+            from pydub import AudioSegment
+            seg = AudioSegment.from_file(io.BytesIO(raw_bytes))
+            wav_buf = io.BytesIO()
+            seg.export(wav_buf, format="wav")
+            wav_buf.seek(0)
+            with sr.AudioFile(wav_buf) as source:
+                audio_data = recognizer.record(source)
+            return recognizer.recognize_google(audio_data)
+        except Exception:
+            st.warning(f"⚠️ Voice transcription failed: {e}")
+            return None
 
 
 def text_to_speech(text):
@@ -433,11 +454,16 @@ def main():
         layout="wide"
     )
 
-    st.write(css, unsafe_allow_html=True)
+    # Inject CSS + non-blocking font preload (speeds up first paint)
+    st.markdown(css, unsafe_allow_html=True)
 
     # Initialize session state
     if "vectorstore" not in st.session_state:
-        st.session_state.vectorstore = None
+        # Auto-load saved KB on startup so it's ready after refresh
+        saved = load_vectorstore()
+        st.session_state.vectorstore = saved
+        if saved:
+            st.session_state.kb_doc_count = st.session_state.get("kb_doc_count", 1)
     if "groq_client" not in st.session_state:
         st.session_state.groq_client = get_groq_client()
     if "chat_history" not in st.session_state:
@@ -675,38 +701,99 @@ def main():
                 with st.chat_message("assistant", avatar="🎓"):
                     st.markdown(text)
 
-    # ---- Voice Input ----
-    st.markdown("---")
-    st.markdown(
-        '<div class="voice-section">'
-        '<strong>🎙️ Voice Input</strong> — Record a question using your microphone'
-        '</div>',
-        unsafe_allow_html=True
-    )
-    audio_file = st.audio_input("Record your question", key="voice_input", label_visibility="collapsed")
+    # ---- Voice Input (hidden off-screen — triggered by custom mic button) ----
+    audio_file = st.audio_input("voice", key="voice_input", label_visibility="collapsed")
 
-    voice_question = None
     if audio_file is not None:
         audio_id = audio_file.file_id
         if st.session_state.get("last_audio_id") != audio_id:
             st.session_state.last_audio_id = audio_id
-            # Show recording animation while transcribing
-            st.markdown(
-                '<div class="mic-recording">'
-                '<div class="mic-dot"></div> Transcribing your voice...'
-                '</div>',
-                unsafe_allow_html=True
-            )
-            voice_question = transcribe_audio(audio_file)
-            if voice_question:
-                st.success(f'🎙️ You said: "{voice_question}"')
+            with st.spinner("🎙️ Transcribing your voice..."):
+                transcribed = transcribe_audio(audio_file)
+            if transcribed:
+                # Store in session_state so it survives the rerun triggered below
+                st.session_state["pending_voice"] = transcribed
+                st.toast(f'🎙️ You said: "{transcribed}"', icon="✅")
             else:
-                st.warning("Could not understand the audio. Please try again.")
+                st.warning("⚠️ Could not understand the audio. Please try again.")
 
-    # ---- Text Input ----
-    question = st.chat_input("Ask a question about your documents...")
+    # ---- Custom + and Mic buttons — injected into DOM, positioned by iframe JS ----
+    st.markdown(
+        '''
+        <div class="chatbar-plus" id="chatbarPlus" title="Attach">+</div>
+        <div class="chatbar-mic"  id="chatbarMic"  title="Voice input">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8"  y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
+    # Zero-height iframe — runs JS in same-origin context to pin buttons onto pill bar
+    stcomp.html(
+        """
+        <script>
+        (function() {
+          var MAX = 80, n = 0;
+          function pin() {
+            try {
+              var pd   = window.parent.document;
+              var pill = pd.querySelector('[data-testid="stChatInput"]');
+              var plus = pd.getElementById('chatbarPlus');
+              var mic  = pd.getElementById('chatbarMic');
+              if (!pill || !plus || !mic) {
+                if (++n < MAX) setTimeout(pin, 200);
+                return;
+              }
+              var r    = pill.getBoundingClientRect();
+              var btnH = 32;
+              var cy   = r.top + (r.height - btnH) / 2;
+              // + inside pill on the LEFT
+              plus.style.position = 'fixed';
+              plus.style.top  = cy + 'px';
+              plus.style.left = (r.left + 12) + 'px';
+              plus.style.display = 'flex';
+              plus.classList.add('ready');
+              // mic inside pill on the RIGHT
+              mic.style.position = 'fixed';
+              mic.style.top  = cy + 'px';
+              mic.style.left = (r.right - btnH - 12) + 'px';
+              mic.style.display = 'flex';
+              mic.classList.add('ready');
+              mic.onclick = function() {
+                var btn = pd.querySelector('[data-testid="stAudioInput"] button');
+                if (btn) { btn.click(); mic.classList.toggle('recording'); }
+              };
+              window.parent.addEventListener('resize', function(){ setTimeout(pin,100); }, {once:true});
+            } catch(e) {}
+          }
+          pin();
+          [300, 800, 1600, 3000].forEach(function(d){ setTimeout(pin, d); });
 
-    # Use voice question if no typed input
+          // Click anywhere on pill → focus textarea
+          function bindPillClick() {
+            var pd   = window.parent.document;
+            var pill = pd.querySelector('[data-testid="stChatInput"]');
+            if (!pill) { setTimeout(bindPillClick, 300); return; }
+            pill.addEventListener('click', function(e) {
+              var ta = pill.querySelector('textarea');
+              if (ta && e.target !== ta) ta.focus();
+            });
+          }
+          setTimeout(bindPillClick, 500);
+        })();
+        </script>
+        """,
+        height=0,
+        scrolling=False
+    )
+    question = st.chat_input("Ask about your exams, grades or evaluation...")
+
+    # Use typed question OR pending voice transcription
+    voice_question = st.session_state.pop("pending_voice", None)
     active_question = question or voice_question
 
     if active_question:
@@ -725,13 +812,12 @@ def main():
                 )
                 st.session_state.last_tts_audio = None
 
-    # ===== FOOTER =====
-    st.markdown("---")
+    # ===== FOOTER — fixed below chat input bar (ChatGPT-style) =====
     st.markdown(
-        '<div class="footer">'
-        '📜 <em>This system provides informational guidance only and does not replace '
+        '<div class="chatgpt-footer">'
+        '📜 This system provides informational guidance only and does not replace '
         'official university regulations. Always refer to your institution\'s official '
-        'documents for authoritative information.</em>'
+        'documents for authoritative information.'
         '</div>',
         unsafe_allow_html=True
     )

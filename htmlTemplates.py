@@ -1,6 +1,6 @@
 css = '''
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
 
 html, body, [class*="css"] {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
@@ -9,6 +9,265 @@ html, body, [class*="css"] {
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 header { visibility: hidden; }
+
+/* ====================================================
+   CHATGPT PILL INPUT BAR
+   ==================================================== */
+
+/* stBottom — sticky bottom container */
+[data-testid="stBottom"] {
+    background: #212121 !important;
+    padding: 0.75rem 1.5rem 0.65rem 1.5rem !important;
+    border-top: 1px solid #2a2a2a !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+[data-testid="stBottom"] > div,
+[data-testid="stBottom"] > div > div,
+[data-testid="stBottom"] [data-testid="stVerticalBlock"],
+[data-testid="stBottom"] [data-testid="stVerticalBlock"] > div,
+[data-testid="stBottom"] .stElementContainer,
+[data-testid="stBottom"] [class*="block-container"],
+[data-testid="stBottom"] [class*="BlockContainer"],
+[data-testid="stBottomBlockContainer"] {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
+/* Collapse containers of + and mic injected elements (position:fixed) */
+.stElementContainer:has(.chatbar-plus),
+.stElementContainer:has(.chatbar-mic) {
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    line-height: 0 !important;
+}
+.stMarkdown:has(.chatbar-plus),
+.stMarkdown:has(.chatbar-mic) {
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 0 !important;
+}
+
+/* Collapse gap in stBottom's vertical stack */
+[data-testid="stBottom"] [data-testid="stVerticalBlock"] {
+    gap: 0 !important;
+}
+
+/* Hide the zero-height stcomp iframe used for JS positioning */
+iframe[title="streamlit_components"], [data-testid="stCustomComponentV1"] {
+    height: 0 !important; min-height: 0 !important;
+    border: none !important; display: block !important;
+    overflow: hidden !important; padding: 0 !important; margin: 0 !important;
+}
+
+/* Nuclear hide — collapse container AND clip the audio widget completely */
+.stElementContainer:has([data-testid="stAudioInput"]) {
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    clip-path: inset(100%) !important;
+    clip: rect(0, 0, 0, 0) !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    position: absolute !important;
+    pointer-events: none !important;
+}
+[data-testid="stAudioInput"] {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    clip-path: inset(100%) !important;
+    white-space: nowrap !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    z-index: -1 !important;
+    border: none !important;
+}
+/* Keep button JS-clickable even though invisible */
+[data-testid="stAudioInput"] button {
+    pointer-events: auto !important;
+    position: absolute !important;
+    z-index: 9999 !important;
+}
+
+/* ── Modern search bar pill — ONE unified bar, zero inner borders ── */
+[data-testid="stChatInput"] {
+    background: #2f2f2f !important;
+    border: 1.5px solid #4a4a4a !important;
+    border-radius: 999px !important;
+    min-height: 54px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: 3.2rem !important;
+    padding-right: 3.2rem !important;
+    display: flex !important;
+    align-items: center !important;
+    transition: border-color 0.22s ease, box-shadow 0.22s ease !important;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.45) !important;
+    overflow: hidden !important;
+}
+[data-testid="stChatInput"]:hover:not(:focus-within) {
+    border-color: #666 !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.55) !important;
+}
+[data-testid="stChatInput"]:focus-within {
+    border-color: #10a37f !important;
+    box-shadow: 0 0 0 3px rgba(16,163,127,0.18), 0 4px 20px rgba(0,0,0,0.5) !important;
+}
+/* Kill ALL inner borders — every child, every state */
+[data-testid="stChatInput"] *,
+[data-testid="stChatInput"] *:focus,
+[data-testid="stChatInput"] *:focus-visible,
+[data-testid="stChatInput"] *:active,
+[data-testid="stChatInput"] *:hover,
+[data-testid="stChatInputContainer"],
+[data-testid="stChatInputContainer"] *,
+[data-testid="stChatInputContainer"] *:focus,
+[data-testid="stChatInputContainer"] *:focus-visible {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+}
+[data-testid="stChatInput"] textarea {
+    background: transparent !important;
+    color: #ececec !important;
+    font-size: 0.97rem !important;
+    font-weight: 400 !important;
+    line-height: 1.5 !important;
+    padding-top: 0.85rem !important;
+    padding-bottom: 0.85rem !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    resize: none !important;
+    caret-color: #10a37f !important;
+    letter-spacing: 0.01em !important;
+    border-radius: 0 !important;
+}
+[data-testid="stChatInput"] textarea::placeholder {
+    color: #6e6e80 !important;
+    font-size: 0.97rem !important;
+    letter-spacing: 0.01em !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+/* Hide send button — always, every state */
+[data-testid="stChatInput"] button,
+[data-testid="stChatInput"] button:hover,
+[data-testid="stChatInput"] button:focus,
+[data-testid="stChatInputSubmitButton"],
+[data-testid="stChatInputSubmitButton"]:hover {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+}
+/* Make entire pill feel like a text input */
+[data-testid="stChatInput"] {
+    cursor: text !important;
+}
+[data-testid="stChatInputContainer"] {
+    padding: 0 !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    cursor: text !important;
+}
+
+/* ── '+' circle — inside pill left, positioned by JS ── */
+.chatbar-plus {
+    position: fixed;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid #555;
+    color: #b0b0b0;
+    font-size: 1.35rem; font-weight: 300; line-height: 1;
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 1010;
+    cursor: pointer; user-select: none;
+    transition: background 0.18s ease, border-color 0.18s ease;
+}
+.chatbar-plus.ready { display: flex !important; }
+.chatbar-plus:hover {
+    background: rgba(255,255,255,0.15) !important;
+    border-color: #888 !important;
+}
+
+/* ── Mic circle — inside pill right, positioned by JS ── */
+.chatbar-mic {
+    position: fixed;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid #555;
+    color: #c8c8c8;
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 1010;
+    cursor: pointer; user-select: none;
+    transition: background 0.18s ease, border-color 0.18s ease;
+}
+.chatbar-mic.ready { display: flex !important; }
+.chatbar-mic:hover {
+    background: rgba(255,255,255,0.18) !important;
+    border-color: #10a37f !important;
+}
+.chatbar-mic svg {
+    width: 14px; height: 14px;
+    fill: none; stroke: #c8c8c8;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.chatbar-mic.recording {
+    background: rgba(231,76,60,0.25) !important;
+    border-color: #e74c3c !important;
+    animation: mic-pulse 1s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(231,76,60,0.5); }
+    50%       { box-shadow: 0 0 0 6px rgba(231,76,60,0); }
+}
+
+/* Footer */
+.chatgpt-footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #212121; text-align: center;
+    padding: 0.15rem 1rem 0.2rem 1rem;
+    font-size: 0.67rem; color: #6e6e80; z-index: 1002; line-height: 1.5;
+}
 
 /* ---- Sidebar ---- */
 [data-testid="stSidebar"] {
@@ -79,7 +338,7 @@ header { visibility: hidden; }
 
 /* ---- Main layout ---- */
 .block-container {
-    padding-top: 1.2rem !important; padding-bottom: 7rem !important;
+    padding-top: 1.2rem !important; padding-bottom: 9rem !important;
     max-width: 860px !important; margin: 0 auto !important;
 }
 .main-header {
@@ -139,20 +398,6 @@ header { visibility: hidden; }
 [data-testid="stChatMessageAvatarUser"] { background: #10a37f !important; }
 [data-testid="stChatMessageAvatarAssistant"] { background: #5436da !important; }
 
-/* ---- Chat input bar ---- */
-[data-testid="stChatInput"] {
-    background: #2f2f2f !important; border: 1px solid #4f4f4f !important;
-    border-radius: 14px !important;
-}
-[data-testid="stChatInput"] textarea {
-    background: transparent !important; color: #ececec !important; font-size: 0.95rem !important;
-}
-[data-testid="stChatInput"] textarea::placeholder { color: #6e6e80 !important; }
-[data-testid="stChatInput"]:focus-within {
-    border-color: #10a37f !important;
-    box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.15) !important;
-}
-
 /* ---- General widget styling ---- */
 .stMarkdown p, .stMarkdown span { color: #ececec; }
 .stCaption { color: #8e8ea0 !important; }
@@ -169,14 +414,6 @@ header { visibility: hidden; }
 
 .stSlider label { color: #ececec !important; font-size: 0.82rem !important; }
 .stToggle label { color: #ececec !important; font-size: 0.85rem !important; }
-
-/* ---- Footer ---- */
-.footer {
-    text-align: center; padding: 0.5rem 1rem; font-size: 0.74rem;
-    color: #6e6e80; border-top: 1px solid #2f2f2f; margin-top: 0.8rem;
-}
-
-.voice-label { font-size: 0.82rem; color: #8e8ea0; margin-bottom: 0.3rem; padding-top: 0.4rem; }
 
 /* ---- Audio player ---- */
 audio {
