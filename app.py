@@ -448,6 +448,9 @@ def handle_question(question):
 
 def main():
     load_dotenv()
+    # Support both local .env and Streamlit Cloud secrets
+    if "GROQ_API_KEY" in st.secrets:
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
     st.set_page_config(
         page_title="Education Examination & Evaluation Process Explainer",
         page_icon="🎓",
