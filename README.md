@@ -2,7 +2,7 @@
 
 > A student-friendly AI assistant that explains academic examination and evaluation processes using your institution's official documents.
 
-Built by **Malipeddi Sekhar** | AITAM | Error Squad | 6th Semester Project
+Built by **Malipeddi Sekhar** | AITAM | Error Squad |
 
 ---
 
