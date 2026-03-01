@@ -812,16 +812,6 @@ def main():
                 )
                 st.session_state.last_tts_audio = None
 
-    # ===== FOOTER — fixed below chat input bar (ChatGPT-style) =====
-    st.markdown(
-        '<div class="chatgpt-footer">'
-        '📜 This system provides informational guidance only and does not replace '
-        'official university regulations. Always refer to your institution\'s official '
-        'documents for authoritative information.'
-        '</div>',
-        unsafe_allow_html=True
-    )
-
 
 if __name__ == '__main__':
     main()

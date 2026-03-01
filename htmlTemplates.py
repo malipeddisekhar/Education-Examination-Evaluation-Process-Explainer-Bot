@@ -261,14 +261,6 @@ iframe[title="streamlit_components"], [data-testid="stCustomComponentV1"] {
     50%       { box-shadow: 0 0 0 6px rgba(231,76,60,0); }
 }
 
-/* Footer */
-.chatgpt-footer {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: #212121; text-align: center;
-    padding: 0.15rem 1rem 0.2rem 1rem;
-    font-size: 0.67rem; color: #6e6e80; z-index: 1002; line-height: 1.5;
-}
-
 /* ---- Sidebar ---- */
 [data-testid="stSidebar"] {
     background-color: #171717 !important;
