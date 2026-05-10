@@ -8,7 +8,7 @@ langchain-text-splitters==1.1.2
 langchain-huggingface==1.2.2
 
 # LLM API integration
-groq==0.12.0
+groq==0.18.0
 
 # Embedding and NLP stack
 transformers==4.40.2
