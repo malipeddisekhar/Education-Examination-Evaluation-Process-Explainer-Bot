@@ -17,6 +17,3 @@ enableXsrfProtection = true
 
 [logger]
 level = "info"
-
-[client.showErrorDetails]
-showErrorDetails = true
