@@ -31,14 +31,12 @@ from htmlTemplates import css, bot_template, user_template
 import speech_recognition as sr
 from gtts import gTTS
 
-# Set poppler path for PDF processing
-os.environ['PATH'] += os.pathsep + r'C:\poppler\Library\bin'
-
 # OCR support (optional — install poppler + pytesseract to enable)
+# On Windows, ensure poppler is in PATH; on Linux/Render, install via system: apt-get install poppler-utils tesseract-ocr
 try:
     from pdf2image import convert_from_bytes
     import pytesseract
-    # Configure pytesseract if on Windows
+    # Configure pytesseract for Windows only (path not needed on Linux if installed via apt)
     if os.name == 'nt':
         pytesseract.pytesseract.pytesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
     OCR_AVAILABLE = True
