@@ -13,7 +13,7 @@ groq==0.12.0
 # Embedding and NLP stack
 transformers==4.40.2
 sentence-transformers==2.7.0
-tokenizers==0.22.2
+tokenizers==0.19.1
 huggingface-hub==0.36.2
 
 # Vector database
