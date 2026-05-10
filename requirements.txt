@@ -11,8 +11,8 @@ langchain-huggingface==1.2.2
 groq==0.12.0
 
 # Embedding and NLP stack
-transformers==5.8.0
-sentence-transformers==5.4.1
+transformers==4.40.2
+sentence-transformers==2.7.0
 tokenizers==0.22.2
 huggingface-hub==1.14.0
 
@@ -20,8 +20,8 @@ huggingface-hub==1.14.0
 faiss-cpu==1.13.2
 
 # Deep learning
-torch==2.2.0
-torchvision==0.17.0
+torch==2.1.2
+torchvision==0.16.2
 sentencepiece==0.2.1
 scipy==1.14.0
 scikit-learn==1.5.0
