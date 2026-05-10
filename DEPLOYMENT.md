@@ -128,14 +128,36 @@ Click "Advanced" → "Add Environment Variable"
 
 ---
 
+## **⏱️ FIRST-TIME STARTUP (IMPORTANT)**
+
+### **First Launch Takes 2-3 Minutes**
+When the app first starts on Render:
+1. **Python 3.11** is initialized
+2. **HuggingFace embedding model** (all-MiniLM-L6-v2) is downloaded (~150MB) — **This is the slowest part**
+3. **Torch, Transformers, and other ML libraries** are initialized
+4. **FAISS and Groq clients** are cached
+
+**⏳ You will see: "Loading embedding model (one-time)..." spinner**
+
+### **Subsequent Launches (Fast)**
+- Once models are cached on Render's filesystem, subsequent starts take **10-15 seconds**
+- Cached embeddings persist across deployments
+
+### **If App Shows "Service Unavailable"**
+- The service is likely still initializing
+- Wait 2-3 minutes and refresh the page
+- Check Render Dashboard > Logs tab to monitor initialization
+
+---
+
 ## **✅ VERIFICATION CHECKLIST**
 
 After deployment completes:
 
 ### Test 1: App Loads
 - [ ] Navigate to provided Render URL
-- [ ] Streamlit UI appears without errors
-- [ ] No "Service Unavailable" messages
+- [ ] Streamlit UI appears without errors (may take 2-3 min on first load)
+- [ ] No "Service Unavailable" messages after 3-4 minutes
 
 ### Test 2: File Upload
 - [ ] Click "Upload PDF(s)"

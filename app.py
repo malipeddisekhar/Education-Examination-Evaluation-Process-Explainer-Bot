@@ -478,6 +478,14 @@ def main():
     # Inject CSS + non-blocking font preload (speeds up first paint)
     st.markdown(css, unsafe_allow_html=True)
 
+    # Show startup message while models load (first time only)
+    try:
+        # Preload embeddings in background - shows spinner while loading
+        _ = get_embeddings()
+    except Exception as e:
+        st.error(f"⚠️ Embedding model loading failed: {e}")
+        return
+
     # Initialize session state
     if "vectorstore" not in st.session_state:
         # Auto-load saved KB on startup so it's ready after refresh
