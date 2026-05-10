@@ -31,10 +31,16 @@ from htmlTemplates import css, bot_template, user_template
 import speech_recognition as sr
 from gtts import gTTS
 
+# Set poppler path for PDF processing
+os.environ['PATH'] += os.pathsep + r'C:\poppler\Library\bin'
+
 # OCR support (optional — install poppler + pytesseract to enable)
 try:
     from pdf2image import convert_from_bytes
     import pytesseract
+    # Configure pytesseract if on Windows
+    if os.name == 'nt':
+        pytesseract.pytesseract.pytesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False
@@ -178,6 +184,10 @@ def get_pdf_text(docs):
 
 def get_chunks(raw_text):
     """Split extracted text into overlapping chunks for the knowledge base."""
+    # Clean the raw text first
+    raw_text = raw_text.encode('utf-8', errors='ignore').decode('utf-8')
+    raw_text = ' '.join(raw_text.split())  # Remove extra whitespace
+    
     text_splitter = CharacterTextSplitter(
         separator=CHUNK_SEPARATOR,
         chunk_size=CHUNK_SIZE,
@@ -185,7 +195,16 @@ def get_chunks(raw_text):
         length_function=len
     )
     chunks = text_splitter.split_text(raw_text)
-    return chunks
+    # Ensure all chunks are valid strings with proper encoding
+    cleaned_chunks = []
+    for chunk in chunks:
+        if chunk and chunk.strip():
+            # Clean each chunk
+            clean_text = str(chunk).encode('utf-8', errors='ignore').decode('utf-8')
+            clean_text = ' '.join(clean_text.split()).strip()
+            if clean_text:
+                cleaned_chunks.append(clean_text)
+    return cleaned_chunks
 
 
 @st.cache_resource(show_spinner="Loading embedding model (one-time)...")
@@ -193,7 +212,7 @@ def get_embeddings():
     """Load and cache the HuggingFace embedding model. Only runs once."""
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL_NAME,
-        model_kwargs={'device': EMBEDDING_DEVICE}
+        encode_kwargs={"normalize_embeddings": False}
     )
     return embeddings
 
@@ -201,8 +220,12 @@ def get_embeddings():
 def get_vectorstore(chunks):
     """Create a FAISS vector store (knowledge base) from text chunks using cached embeddings."""
     embeddings = get_embeddings()
-    vectorstore = FAISS.from_texts(texts=chunks, embedding=embeddings)
-    return vectorstore
+    try:
+        vectorstore = FAISS.from_texts(texts=chunks, embedding=embeddings)
+        return vectorstore
+    except Exception as e:
+        st.error(f"❌ Error creating vector store: {str(e)}")
+        raise
 
 
 def save_vectorstore(vectorstore):
