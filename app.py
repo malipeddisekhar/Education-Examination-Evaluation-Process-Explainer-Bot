@@ -146,37 +146,47 @@ def get_pdf_text(docs):
     """Extract text from all uploaded PDF files. Falls back to OCR for scanned/image PDFs."""
     text = ""
     for pdf in docs:
-        pdf_bytes = pdf.read()
-        pdf.seek(0)  # Reset for potential reuse
+        try:
+            pdf_bytes = pdf.read()
+            pdf.seek(0)  # Reset for potential reuse
+            
+            # Check file size (warn if > 50MB)
+            file_size_mb = len(pdf_bytes) / (1024 * 1024)
+            if file_size_mb > 50:
+                st.warning(f"⚠️ {pdf.name} is large ({file_size_mb:.1f}MB). Processing may take longer.")
 
-        # --- Try normal text extraction first ---
-        pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
-        pdf_text = ""
-        for page in pdf_reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                pdf_text += page_text
+            # --- Try normal text extraction first ---
+            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+            pdf_text = ""
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    pdf_text += page_text
 
-        # --- Fallback to OCR if text extraction yielded nothing ---
-        if not pdf_text.strip() and OCR_AVAILABLE:
-            try:
-                images = convert_from_bytes(pdf_bytes)
-                ocr_text = ""
-                for img in images:
-                    page_ocr = pytesseract.image_to_string(img)
-                    if page_ocr:
-                        ocr_text += page_ocr + "\n"
-                if ocr_text.strip():
-                    pdf_text = ocr_text
-                    st.info(f"📷 OCR applied to **{pdf.name}** — scanned PDF detected.")
-                else:
-                    st.warning(f"⚠️ Could not extract text from **{pdf.name}** (even with OCR).")
-            except Exception as e:
-                st.warning(f"⚠️ OCR failed for **{pdf.name}**: {e}")
-        elif not pdf_text.strip():
-            st.warning(f"⚠️ Could not extract text from **{pdf.name}**. Install pytesseract for OCR support.")
+            # --- Fallback to OCR if text extraction yielded nothing ---
+            if not pdf_text.strip() and OCR_AVAILABLE:
+                try:
+                    images = convert_from_bytes(pdf_bytes)
+                    ocr_text = ""
+                    for img in images:
+                        page_ocr = pytesseract.image_to_string(img)
+                        if page_ocr:
+                            ocr_text += page_ocr + "\n"
+                    if ocr_text.strip():
+                        pdf_text = ocr_text
+                        st.info(f"📷 OCR applied to **{pdf.name}** — scanned PDF detected.")
+                    else:
+                        st.warning(f"⚠️ Could not extract text from **{pdf.name}** (even with OCR).")
+                except Exception as e:
+                    st.warning(f"⚠️ OCR failed for **{pdf.name}**: {e}")
+            elif not pdf_text.strip():
+                st.warning(f"⚠️ Could not extract text from **{pdf.name}**. Install pytesseract for OCR support.")
 
-        text += pdf_text
+            text += pdf_text
+        except Exception as e:
+            st.error(f"❌ Error processing **{pdf.name}**: {str(e)}")
+            continue
+            
     return text
 
 
@@ -568,45 +578,102 @@ def main():
             key="pdf_uploader"
         )
         
-        # Dynamic KB building - auto-build when files are uploaded
+        # Show file info and build button
         if docs:
             st.caption(f"📎 {len(docs)} document(s) selected")
             
-            # Check if these are new files (different from last build)
+            # Check if these are new files
             current_file_ids = [doc.file_id for doc in docs]
             last_file_ids = st.session_state.get("last_uploaded_file_ids", [])
+            files_changed = current_file_ids != last_file_ids
             
-            if current_file_ids != last_file_ids:
-                # New files detected - auto-build
-                with st.spinner("⏳ Building Academic Knowledge Base..."):
+            # Show build button
+            col1, col2 = st.columns(2)
+            with col1:
+                build_btn = st.button(
+                    "🔨 Build KB" if files_changed else "🔨 Rebuild KB",
+                    use_container_width=True,
+                    type="primary" if files_changed else "secondary",
+                    help="Process PDFs and create knowledge base"
+                )
+            with col2:
+                load_btn = st.button(
+                    "📂 Load Saved KB",
+                    use_container_width=True,
+                    help="Load previously saved knowledge base"
+                )
+            
+            # Build KB when button clicked
+            if build_btn:
+                progress_bar = st.progress(0, text="Starting...")
+                try:
+                    # Step 1: Extract text
+                    progress_bar.progress(20, text="📄 Extracting text from PDFs...")
+                    raw_text = get_pdf_text(docs)
+                    
+                    if not raw_text.strip():
+                        st.error("❌ Could not extract text from the PDFs. Please ensure they contain readable text.")
+                        progress_bar.empty()
+                    else:
+                        # Step 2: Create chunks
+                        progress_bar.progress(40, text="✂️ Splitting text into chunks...")
+                        text_chunks = get_chunks(raw_text)
+                        
+                        # Step 3: Create embeddings and vectorstore
+                        progress_bar.progress(60, text="🧠 Creating embeddings (this may take a minute)...")
+                        vectorstore = get_vectorstore(text_chunks)
+                        
+                        # Step 4: Save
+                        progress_bar.progress(80, text="💾 Saving knowledge base...")
+                        save_vectorstore(vectorstore)
+                        
+                        # Step 5: Update session state
+                        progress_bar.progress(100, text="✅ Complete!")
+                        st.session_state.vectorstore = vectorstore
+                        st.session_state.kb_doc_count = len(docs)
+                        st.session_state.kb_chunk_count = len(text_chunks)
+                        st.session_state.last_uploaded_file_ids = current_file_ids
+                        
+                        progress_bar.empty()
+                        st.success(
+                            f"✅ **Knowledge Base Built Successfully!**\n\n"
+                            f"📚 {len(docs)} document(s) → {len(text_chunks)} knowledge chunks\n\n"
+                            f"You can now ask questions!"
+                        )
+                        st.balloons()
+                        
+                except Exception as e:
+                    progress_bar.empty()
+                    st.error(f"❌ Error building knowledge base: {str(e)}\n\nPlease try again or upload different PDFs.")
+                    import traceback
+                    with st.expander("🔍 Technical Details"):
+                        st.code(traceback.format_exc())
+            
+            # Load saved KB
+            if load_btn:
+                with st.spinner("📂 Loading saved knowledge base..."):
                     try:
-                        raw_text = get_pdf_text(docs)
-                        if not raw_text.strip():
-                            st.error("❌ Could not extract text from the PDFs.")
-                        else:
-                            text_chunks = get_chunks(raw_text)
-                            vectorstore = get_vectorstore(text_chunks)
+                        vectorstore = load_vectorstore()
+                        if vectorstore:
                             st.session_state.vectorstore = vectorstore
-                            save_vectorstore(vectorstore)
-                            st.session_state.kb_doc_count = len(docs)
-                            st.session_state.kb_chunk_count = len(text_chunks)
-                            st.session_state.last_uploaded_file_ids = current_file_ids
-                            st.success(
-                                f"✅ **Knowledge Base Built Successfully!**\n\n"
-                                f"{len(docs)} document(s) → {len(text_chunks)} knowledge chunks"
-                            )
+                            st.success("✅ Knowledge Base Loaded Successfully!")
+                        else:
+                            st.warning("⚠️ No saved knowledge base found. Please build one first using the button above.")
                     except Exception as e:
-                        st.error(f"❌ Error building knowledge base: {str(e)}")
-        
-        # Manual Load KB button (for loading previously saved KB)
-        if st.button("📂 Load Saved KB", use_container_width=True, help="Load previously saved knowledge base"):
-            with st.spinner("📂 Loading saved knowledge base..."):
-                vectorstore = load_vectorstore()
-                if vectorstore:
-                    st.session_state.vectorstore = vectorstore
-                    st.success("✅ Knowledge Base Loaded Successfully!")
-                else:
-                    st.warning("⚠️ No saved knowledge base found. Please upload PDFs above.")
+                        st.error(f"❌ Error loading knowledge base: {str(e)}")
+        else:
+            # Show load button even without files
+            if st.button("📂 Load Saved KB", use_container_width=True, help="Load previously saved knowledge base"):
+                with st.spinner("📂 Loading saved knowledge base..."):
+                    try:
+                        vectorstore = load_vectorstore()
+                        if vectorstore:
+                            st.session_state.vectorstore = vectorstore
+                            st.success("✅ Knowledge Base Loaded Successfully!")
+                        else:
+                            st.info("ℹ️ No saved knowledge base found. Please upload PDFs above to create one.")
+                    except Exception as e:
+                        st.error(f"❌ Error loading knowledge base: {str(e)}")
 
         st.markdown("---")
 
@@ -733,7 +800,7 @@ def main():
             '<p>To get started:</p>'
             '<ol>'
             '<li>📄 <b>Upload</b> your exam regulation PDFs in the sidebar (left panel)</li>'
-            '<li>⏳ <b>Wait</b> for automatic knowledge base building</li>'
+            '<li>🔨 <b>Click "Build KB"</b> to process the documents</li>'
             '<li>💬 <b>Ask</b> questions about examination patterns, grading, revaluation, and more</li>'
             '</ol>'
             '<p><em>Example questions you can ask:</em></p>'
