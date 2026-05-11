@@ -536,6 +536,8 @@ def main():
         st.session_state.voice_output_enabled = True
     if "last_tts_audio" not in st.session_state:
         st.session_state.last_tts_audio = None
+    if "last_uploaded_file_ids" not in st.session_state:
+        st.session_state.last_uploaded_file_ids = []
 
     # ===== SIDEBAR =====
     with st.sidebar:
@@ -562,45 +564,49 @@ def main():
             "Upload exam regulation PDFs, syllabi, or academic handbooks",
             accept_multiple_files=True,
             type=["pdf"],
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="pdf_uploader"
         )
+        
+        # Dynamic KB building - auto-build when files are uploaded
         if docs:
             st.caption(f"📎 {len(docs)} document(s) selected")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            build_btn = st.button("🔨 Build KB", use_container_width=True)
-        with col2:
-            load_btn = st.button("📂 Load KB", use_container_width=True)
-
-        if build_btn:
-            if not docs:
-                st.warning("📄 Please upload at least one academic PDF first.")
-            else:
+            
+            # Check if these are new files (different from last build)
+            current_file_ids = [doc.file_id for doc in docs]
+            last_file_ids = st.session_state.get("last_uploaded_file_ids", [])
+            
+            if current_file_ids != last_file_ids:
+                # New files detected - auto-build
                 with st.spinner("⏳ Building Academic Knowledge Base..."):
-                    raw_text = get_pdf_text(docs)
-                    if not raw_text.strip():
-                        st.error("Could not extract text from the PDFs.")
-                    else:
-                        text_chunks = get_chunks(raw_text)
-                        vectorstore = get_vectorstore(text_chunks)
-                        st.session_state.vectorstore = vectorstore
-                        save_vectorstore(vectorstore)
-                        st.session_state.kb_doc_count = len(docs)
-                        st.session_state.kb_chunk_count = len(text_chunks)
-                        st.success(
-                            f"📚 **Academic Knowledge Base Successfully Built!**\n\n"
-                            f"{len(docs)} document(s) processed into {len(text_chunks)} knowledge chunks."
-                        )
-
-        if load_btn:
-            with st.spinner("Loading saved academic knowledge base..."):
+                    try:
+                        raw_text = get_pdf_text(docs)
+                        if not raw_text.strip():
+                            st.error("❌ Could not extract text from the PDFs.")
+                        else:
+                            text_chunks = get_chunks(raw_text)
+                            vectorstore = get_vectorstore(text_chunks)
+                            st.session_state.vectorstore = vectorstore
+                            save_vectorstore(vectorstore)
+                            st.session_state.kb_doc_count = len(docs)
+                            st.session_state.kb_chunk_count = len(text_chunks)
+                            st.session_state.last_uploaded_file_ids = current_file_ids
+                            st.success(
+                                f"✅ **Knowledge Base Built Successfully!**\n\n"
+                                f"{len(docs)} document(s) → {len(text_chunks)} knowledge chunks"
+                            )
+                    except Exception as e:
+                        st.error(f"❌ Error building knowledge base: {str(e)}")
+        
+        # Manual Load KB button (for loading previously saved KB)
+        if st.button("📂 Load Saved KB", use_container_width=True, help="Load previously saved knowledge base"):
+            with st.spinner("📂 Loading saved knowledge base..."):
                 vectorstore = load_vectorstore()
                 if vectorstore:
                     st.session_state.vectorstore = vectorstore
-                    st.success("📚 Academic Knowledge Base Loaded Successfully!")
+                    st.success("✅ Knowledge Base Loaded Successfully!")
                 else:
-                    st.warning("No saved knowledge base found. Please upload and build first.")
+                    st.warning("⚠️ No saved knowledge base found. Please upload PDFs above.")
 
         st.markdown("---")
 
@@ -718,10 +724,6 @@ def main():
         '</div>',
         unsafe_allow_html=True
     )
-    
-    # Show sidebar hint if no knowledge base
-    if st.session_state.vectorstore is None:
-        st.info("👈 **Open the sidebar** (click the arrow in the top-left corner) to upload PDFs and build your knowledge base!")
 
     # Show welcome message when no KB and no chat
     if st.session_state.vectorstore is None and not st.session_state.chat_history:
@@ -730,9 +732,9 @@ def main():
             '<h3>👋 Welcome, Student!</h3>'
             '<p>To get started:</p>'
             '<ol>'
-            '<li>📄 <b>Upload</b> your exam regulation PDFs or academic handbooks in the sidebar</li>'
-            '<li>🔨 <b>Build</b> the Academic Knowledge Base</li>'
-            '<li>💬 <b>Ask</b> about examination patterns, grading systems, revaluation, and more</li>'
+            '<li>📄 <b>Upload</b> your exam regulation PDFs in the sidebar (left panel)</li>'
+            '<li>⏳ <b>Wait</b> for automatic knowledge base building</li>'
+            '<li>💬 <b>Ask</b> questions about examination patterns, grading, revaluation, and more</li>'
             '</ol>'
             '<p><em>Example questions you can ask:</em></p>'
             '<ul>'
