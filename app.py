@@ -252,7 +252,15 @@ def load_vectorstore():
 @st.cache_resource(show_spinner=False)
 def get_groq_client():
     """Initialize and cache the Groq client (one-time, survives reruns)."""
-    return Groq(api_key=os.getenv("GROQ_API_KEY"))
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key or api_key == "your_groq_api_key_here":
+        st.error("❌ **GROQ_API_KEY not configured!**\n\nPlease set your Groq API key in the environment variables.\nGet a free key at: https://console.groq.com")
+        st.stop()
+    try:
+        return Groq(api_key=api_key)
+    except Exception as e:
+        st.error(f"❌ Failed to initialize Groq client: {str(e)}")
+        st.stop()
 
 
 # ============================================================
@@ -468,7 +476,19 @@ def handle_question(question):
 # ============================================================
 
 def main():
+    # Load environment variables
     load_dotenv()
+    
+    # Check for API key early
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key or api_key == "your_groq_api_key_here":
+        st.error(
+            "❌ **GROQ_API_KEY not configured!**\n\n"
+            "Please set your Groq API key in the environment variables.\n\n"
+            "Get a free key at: https://console.groq.com"
+        )
+        st.stop()
+    
     st.set_page_config(
         page_title="Education Examination & Evaluation Process Explainer",
         page_icon="🎓",

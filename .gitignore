@@ -19,7 +19,8 @@ ENV/
 faiss_knowledge_base/
 
 # -- Streamlit Cache ------------------------------------------
-.streamlit/
+.streamlit/secrets.toml
+.streamlit/*.pyc
 
 # -- OS & Editor ----------------------------------------------
 .DS_Store
