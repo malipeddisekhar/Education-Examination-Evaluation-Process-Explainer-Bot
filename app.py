@@ -492,7 +492,8 @@ def main():
     st.set_page_config(
         page_title="Education Examination & Evaluation Process Explainer",
         page_icon="🎓",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
 
     # Inject CSS + non-blocking font preload (speeds up first paint)
@@ -717,6 +718,10 @@ def main():
         '</div>',
         unsafe_allow_html=True
     )
+    
+    # Show sidebar hint if no knowledge base
+    if st.session_state.vectorstore is None:
+        st.info("👈 **Open the sidebar** (click the arrow in the top-left corner) to upload PDFs and build your knowledge base!")
 
     # Show welcome message when no KB and no chat
     if st.session_state.vectorstore is None and not st.session_state.chat_history:

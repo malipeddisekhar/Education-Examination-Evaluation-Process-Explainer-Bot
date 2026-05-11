@@ -265,9 +265,18 @@ iframe[title="streamlit_components"], [data-testid="stCustomComponentV1"] {
 [data-testid="stSidebar"] {
     background-color: #171717 !important;
     border-right: 1px solid #2f2f2f;
+    display: block !important;
+    visibility: visible !important;
 }
 [data-testid="stSidebar"] * { color: #ececec !important; }
 [data-testid="stSidebar"] hr { border-color: #2f2f2f !important; margin: 0.5rem 0 !important; }
+
+/* Ensure sidebar is visible on mobile */
+@media (max-width: 768px) {
+    [data-testid="stSidebar"][aria-expanded="false"] {
+        display: block !important;
+    }
+}
 
 .sidebar-title {
     font-size: 1.1rem; font-weight: 700; color: #fff !important;

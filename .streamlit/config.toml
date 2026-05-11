@@ -15,5 +15,9 @@ headless = true
 runOnSave = true
 enableXsrfProtection = true
 
+[ui]
+hideTopBar = false
+hideSidebarNav = false
+
 [logger]
 level = "info"
