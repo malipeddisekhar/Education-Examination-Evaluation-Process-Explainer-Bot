@@ -15,15 +15,10 @@ headless = true
 runOnSave = true
 enableXsrfProtection = true
 maxUploadSize = 200
-enableCORS = false
 
 [browser]
 serverAddress = "0.0.0.0"
 gatherUsageStats = false
-
-[ui]
-hideTopBar = false
-hideSidebarNav = false
 
 [logger]
 level = "info"
