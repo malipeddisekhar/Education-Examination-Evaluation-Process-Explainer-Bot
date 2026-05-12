@@ -192,47 +192,73 @@ def get_pdf_text(docs):
 
 def get_chunks(raw_text):
     """Split extracted text into overlapping chunks for the knowledge base."""
-    # Clean the raw text first
-    raw_text = raw_text.encode('utf-8', errors='ignore').decode('utf-8')
-    raw_text = ' '.join(raw_text.split())  # Remove extra whitespace
-    
-    text_splitter = CharacterTextSplitter(
-        separator=CHUNK_SEPARATOR,
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        length_function=len
-    )
-    chunks = text_splitter.split_text(raw_text)
-    # Ensure all chunks are valid strings with proper encoding
-    cleaned_chunks = []
-    for chunk in chunks:
-        if chunk and chunk.strip():
-            # Clean each chunk
-            clean_text = str(chunk).encode('utf-8', errors='ignore').decode('utf-8')
-            clean_text = ' '.join(clean_text.split()).strip()
-            if clean_text:
-                cleaned_chunks.append(clean_text)
-    return cleaned_chunks
+    try:
+        # Validate input
+        if not raw_text or not raw_text.strip():
+            raise ValueError("No text provided for chunking")
+        
+        # Clean the raw text first
+        raw_text = raw_text.encode('utf-8', errors='ignore').decode('utf-8')
+        raw_text = ' '.join(raw_text.split())  # Remove extra whitespace
+        
+        # Check if text is too short
+        if len(raw_text) < 50:
+            raise ValueError(f"Text too short ({len(raw_text)} characters). Please upload PDFs with more content.")
+        
+        text_splitter = CharacterTextSplitter(
+            separator=CHUNK_SEPARATOR,
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP,
+            length_function=len
+        )
+        chunks = text_splitter.split_text(raw_text)
+        
+        # Ensure all chunks are valid strings with proper encoding
+        cleaned_chunks = []
+        for chunk in chunks:
+            if chunk and chunk.strip():
+                # Clean each chunk
+                clean_text = str(chunk).encode('utf-8', errors='ignore').decode('utf-8')
+                clean_text = ' '.join(clean_text.split()).strip()
+                if clean_text and len(clean_text) > 10:  # Minimum chunk size
+                    cleaned_chunks.append(clean_text)
+        
+        if not cleaned_chunks:
+            raise ValueError("No valid text chunks created. Please check your PDF content.")
+        
+        return cleaned_chunks
+    except Exception as e:
+        st.error(f"❌ Error creating text chunks: {str(e)}")
+        raise
 
 
 @st.cache_resource(show_spinner="Loading embedding model (one-time)...")
 def get_embeddings():
     """Load and cache the HuggingFace embedding model. Only runs once."""
-    embeddings = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME,
-        encode_kwargs={"normalize_embeddings": False}
-    )
-    return embeddings
+    try:
+        embeddings = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            encode_kwargs={"normalize_embeddings": False}
+        )
+        return embeddings
+    except Exception as e:
+        st.error(f"❌ Failed to load embedding model: {str(e)}")
+        st.info("💡 This might be due to network issues or missing dependencies. Please try refreshing the page.")
+        raise
 
 
 def get_vectorstore(chunks):
     """Create a FAISS vector store (knowledge base) from text chunks using cached embeddings."""
-    embeddings = get_embeddings()
     try:
+        if not chunks or len(chunks) == 0:
+            raise ValueError("No text chunks provided. Please ensure PDFs contain readable text.")
+        
+        embeddings = get_embeddings()
         vectorstore = FAISS.from_texts(texts=chunks, embedding=embeddings)
         return vectorstore
     except Exception as e:
         st.error(f"❌ Error creating vector store: {str(e)}")
+        st.info("💡 Possible causes:\n- PDF contains no readable text\n- Network issues downloading models\n- Insufficient memory")
         raise
 
 
