@@ -264,13 +264,12 @@ def get_groq_client():
     """Initialize and cache the Groq client (one-time, survives reruns)."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key or api_key == "your_groq_api_key_here":
-        st.error("❌ **GROQ_API_KEY not configured!**\n\nPlease set your Groq API key in the environment variables.\nGet a free key at: https://console.groq.com")
-        st.stop()
+        return None  # Return None instead of stopping the app
     try:
         return Groq(api_key=api_key)
     except Exception as e:
         st.error(f"❌ Failed to initialize Groq client: {str(e)}")
-        st.stop()
+        return None
 
 
 # ============================================================
@@ -489,16 +488,6 @@ def main():
     # Load environment variables
     load_dotenv()
     
-    # Check for API key early
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key or api_key == "your_groq_api_key_here":
-        st.error(
-            "❌ **GROQ_API_KEY not configured!**\n\n"
-            "Please set your Groq API key in the environment variables.\n\n"
-            "Get a free key at: https://console.groq.com"
-        )
-        st.stop()
-    
     st.set_page_config(
         page_title="Education Examination & Evaluation Process Explainer",
         page_icon="🎓",
@@ -509,13 +498,23 @@ def main():
     # Inject CSS + non-blocking font preload (speeds up first paint)
     st.markdown(css, unsafe_allow_html=True)
 
+    # Check for API key and show warning if not set
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key or api_key == "your_groq_api_key_here":
+        st.error(
+            "❌ **GROQ_API_KEY not configured!**\n\n"
+            "Please set your Groq API key in the environment variables.\n\n"
+            "Get a free key at: https://console.groq.com"
+        )
+        st.info("💡 The app will load but you won't be able to ask questions until the API key is configured.")
+    
     # Show startup message while models load (first time only)
     try:
         # Preload embeddings in background - shows spinner while loading
         _ = get_embeddings()
     except Exception as e:
         st.error(f"⚠️ Embedding model loading failed: {e}")
-        return
+        st.info("💡 The app will continue to load. You can still upload PDFs.")
 
     # Initialize session state
     if "vectorstore" not in st.session_state:
