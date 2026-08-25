@@ -1,0 +1,3 @@
+# System packages installed on Streamlit Cloud (Ubuntu/Debian)
+# Required for gTTS audio playback dependencies
+ffmpeg

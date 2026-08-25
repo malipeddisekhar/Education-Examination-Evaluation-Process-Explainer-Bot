@@ -6,7 +6,7 @@
 #
 # Components:
 #   1. Knowledge Base   - PDF upload, text extraction, chunking
-#   2. LLM Selection    - Groq API (Llama 3.3 70B, Mixtral, Gemma2)
+#   2. LLM Selection    - Groq API (GPT-OSS, Compound)
 #   3. Prompt Config    - Academic system prompt, generation params
 #   4. RAG + Vector DB  - FAISS vector store with HuggingFace embeddings
 #   5. Voice I/O        - Speech-to-text input, text-to-speech output
@@ -18,17 +18,15 @@ import os
 import io
 import time
 import base64
-import tempfile
+import traceback
 from dotenv import load_dotenv
 import streamlit as st
-import streamlit.components.v1 as stcomp
 from PyPDF2 import PdfReader
 from langchain_text_splitters import CharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from groq import Groq
-from htmlTemplates import css, bot_template, user_template
-import speech_recognition as sr
+from htmlTemplates import css
 from gtts import gTTS
 
 # OCR support (optional — install poppler + pytesseract to enable)
@@ -47,8 +45,8 @@ except ImportError:
 # 1. KNOWLEDGE BASE CONFIGURATION
 # ============================================================
 # Chunking parameters for building the knowledge base
-CHUNK_SIZE = 500           # Number of characters per chunk (smaller = more precise retrieval)
-CHUNK_OVERLAP = 50         # Overlap between consecutive chunks
+CHUNK_SIZE = 300           # Number of characters per chunk (smaller = more precise retrieval)
+CHUNK_OVERLAP = 30         # Overlap between consecutive chunks
 CHUNK_SEPARATOR = "\n"     # Separator used to split text
 
 # Embedding model for vectorizing text chunks
@@ -56,7 +54,7 @@ EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DEVICE = "cpu"
 
 # Number of relevant chunks to retrieve per query
-RETRIEVAL_TOP_K = 2
+RETRIEVAL_TOP_K = 1
 
 # Local path to persist the FAISS vector store
 VECTORSTORE_PERSIST_DIR = "faiss_knowledge_base"
@@ -66,77 +64,35 @@ VECTORSTORE_PERSIST_DIR = "faiss_knowledge_base"
 # ============================================================
 # Available Groq models (all free)
 AVAILABLE_MODELS = {
-    "Llama 3.3 70B": "llama-3.3-70b-versatile",
-    "Llama 3.1 8B (Fast)": "llama-3.1-8b-instant",
-    "Mixtral 8x7B": "mixtral-8x7b-32768",
-    "Gemma2 9B": "gemma2-9b-it",
+    "GPT-OSS 20B (Fast)": "openai/gpt-oss-20b",       # Fastest
+    "GPT-OSS 120B (Best)": "openai/gpt-oss-120b",     # Best quality
+    "Groq Compound": "groq/compound",                 # Versatile
+    "Groq Compound Mini": "groq/compound-mini",       # Lightweight
 }
-DEFAULT_MODEL = "Llama 3.3 70B"
+DEFAULT_MODEL = "GPT-OSS 20B (Fast)"  # Default to fastest model
 
 # ============================================================
 # 3. PROMPT CONFIGURATION & GENERATION PARAMETERS
 # ============================================================
-# System prompt — strict academic examination explainer
+# System prompt — compact (~140 tokens) to stay within TPM limits
 SYSTEM_PROMPT = (
-    "You are an Education Examination & Evaluation Process Assistant.\n\n"
-    "=== STRICT DOCUMENT-GROUNDING RULES (HIGHEST PRIORITY) ===\n"
-    "1. You MUST answer ONLY using information that is EXPLICITLY and LITERALLY present "
-    "in the RETRIEVED DOCUMENT CONTEXT provided to you.\n"
-    "2. INACCURATE / OUT-OF-RANGE VALUES: If the document defines a valid range or set "
-    "of permitted values for something (e.g., marks 0\u2013100, specific grade letters, "
-    "defined attendance percentages) AND the user asks about a value that FALLS OUTSIDE "
-    "or is INCONSISTENT with that defined range, you MUST respond EXACTLY with:\n"
-    "   \"\u274c Inaccurate value: According to the uploaded document, [topic] must be "
-    "in the range [valid range / permitted values from the document]. "
-    "The value you mentioned ([user's value]) is outside this defined range and is therefore invalid.\"\n"
-    "   Fill in [topic], [valid range], and [user's value] with the actual values from "
-    "the document and the user's query.\n"
-    "   EXAMPLE: Document defines grades for marks 0\u2013100. User asks about 101 marks.\n"
-    "   Correct response: \"\u274c Inaccurate value: According to the uploaded document, "
-    "marks must be in the range 0\u2013100. The value you mentioned (101) is outside this "
-    "defined range and is therefore invalid.\"\n"
-    "3. MISSING INFORMATION: If the user's question asks about a value, scenario, or case "
-    "that is simply NOT mentioned or defined anywhere in the document context, "
-    "you MUST respond EXACTLY with:\n"
-    "   \"\u26a0\ufe0f This information is not available in the uploaded document(s). "
-    "Please refer to your institution's official regulations for this specific query.\"\n"
-    "4. You MUST NOT infer, extrapolate, calculate, or assume any information "
-    "beyond what is explicitly written in the context.\n"
-    "5. You MUST NOT use your general training knowledge to fill gaps. "
-    "If it is not in the document, it does not exist for you.\n"
-    "6. Partial answers are not allowed. If only part of the question is covered "
-    "in the document, answer only that part and explicitly state what is NOT covered.\n\n"
-    "=== SCOPE ===\n"
-    "Your purpose is to explain (from the document only):\n"
-    "- Examination patterns and schedules\n"
-    "- Internal and external evaluation methods\n"
-    "- Grading systems (CGPA, GPA, letter grades, percentage)\n"
-    "- Revaluation and recounting processes\n"
-    "- Supplementary and improvement examinations\n"
-    "- Attendance rules and eligibility criteria\n"
-    "- Hall ticket and registration procedures\n"
-    "- Result publication and transcript processes\n\n"
-    "=== RESPONSE STYLE ===\n"
-    "- Use simple, student-friendly language\n"
-    "- Use clear headings, bullet points, or numbered steps\n"
-    "- Be encouraging and supportive in tone\n\n"
-    "=== ABSOLUTE PROHIBITIONS ===\n"
-    "- NEVER predict, estimate, or calculate grades or marks\n"
-    "- NEVER answer questions about values/scenarios not present in the document\n"
-    "- NEVER solve exam questions or provide model answers\n"
-    "- NEVER assist with academic dishonesty\n"
-    "- NEVER discuss topics outside examination & evaluation processes\n"
-    "- NEVER use knowledge from outside the provided document context\n\n"
-    "If a user asks anything outside examination process explanation, reply:\n"
-    "'I can only help explain examination and evaluation processes as described "
-    "in the uploaded documents. Please ask about exam patterns, grading, "
-    "revaluation, or similar topics.'\n"
+    "You are an Education Examination & Evaluation Process Assistant. "
+    "Answer ONLY from the RETRIEVED DOCUMENT CONTEXT in the user message. "
+    "Rules:\n"
+    "1. Out-of-range value: reply '\u274c Inaccurate value: [explain using document]'\n"
+    "2. Topic missing from document: reply '\u26a0\ufe0f Not available in the uploaded document(s). "
+    "Refer to your institution's official regulations.'\n"
+    "3. NEVER infer, calculate, or use outside knowledge.\n"
+    "4. NEVER solve exam questions or assist with academic dishonesty.\n"
+    "5. Out of scope: reply 'I can only help with examination and evaluation processes.'\n"
+    "Scope: exam patterns, grading (CGPA/GPA), revaluation, attendance, hall tickets, transcripts.\n"
+    "Style: simple, student-friendly, use bullet points."
 )
 
 # Default generation parameters (configurable via sidebar)
 DEFAULT_TEMPERATURE = 0.0   # 0.0 = fully deterministic, prevents hallucination
 DEFAULT_TOP_P = 0.95        # Nucleus sampling threshold
-DEFAULT_MAX_TOKENS = 2048   # Maximum output tokens
+DEFAULT_MAX_TOKENS = 512    # Maximum output tokens (reduced to stay within TPM limits)
 
 # ============================================================
 # KNOWLEDGE BASE FUNCTIONS
@@ -287,12 +243,17 @@ def load_vectorstore():
 
 @st.cache_resource(show_spinner=False)
 def get_groq_client():
-    """Initialize and cache the Groq client (one-time, survives reruns)."""
-    api_key = os.getenv("GROQ_API_KEY")
+    """Initialize and cache the Groq client.
+    Reads API key from st.secrets (Streamlit Cloud) or .env (local)."""
+    # Try Streamlit secrets first (cloud deployment), then .env (local)
+    api_key = st.secrets.get("GROQ_API_KEY", None) if hasattr(st, "secrets") else None
+    if not api_key:
+        api_key = os.getenv("GROQ_API_KEY")
     if not api_key or api_key == "your_groq_api_key_here":
-        return None  # Return None instead of stopping the app
+        return None
     try:
-        return Groq(api_key=api_key)
+        client = Groq(api_key=api_key)
+        return client
     except Exception as e:
         st.error(f"❌ Failed to initialize Groq client: {str(e)}")
         return None
@@ -303,8 +264,8 @@ def get_groq_client():
 # ============================================================
 
 def transcribe_audio(audio_file):
-    """Fast transcription using Groq Whisper API.
-    Accepts WebM/Opus directly from browser — no conversion needed."""
+    """Transcription using Groq Whisper API.
+    Accepts WebM/Opus directly from browser."""
     try:
         audio_file.seek(0)
         raw_bytes = audio_file.read()
@@ -312,7 +273,6 @@ def transcribe_audio(audio_file):
         if not raw_bytes or len(raw_bytes) < 100:
             return None
         client = get_groq_client()
-        # Groq Whisper accepts WebM, WAV, MP3, OGG, FLAC natively
         transcription = client.audio.transcriptions.create(
             file=("audio.webm", raw_bytes, "audio/webm"),
             model="whisper-large-v3-turbo",
@@ -322,23 +282,8 @@ def transcribe_audio(audio_file):
         result = transcription.strip() if isinstance(transcription, str) else str(transcription).strip()
         return result if result else None
     except Exception as e:
-        # Fallback to Google STT if Groq Whisper fails
-        try:
-            recognizer = sr.Recognizer()
-            audio_file.seek(0)
-            raw_bytes = audio_file.read()
-            audio_file.seek(0)
-            from pydub import AudioSegment
-            seg = AudioSegment.from_file(io.BytesIO(raw_bytes))
-            wav_buf = io.BytesIO()
-            seg.export(wav_buf, format="wav")
-            wav_buf.seek(0)
-            with sr.AudioFile(wav_buf) as source:
-                audio_data = recognizer.record(source)
-            return recognizer.recognize_google(audio_data)
-        except Exception:
-            st.warning(f"⚠️ Voice transcription failed: {e}")
-            return None
+        st.warning(f"⚠️ Voice transcription failed: {e}")
+        return None
 
 
 def text_to_speech(text):
@@ -374,40 +319,31 @@ def get_relevant_context(vectorstore, question, k=RETRIEVAL_TOP_K):
 
 
 def build_rag_prompt(question, context, chat_history):
-    """Build the full RAG prompt combining system prompt, context, history, and question."""
-    # Build chat history string (trim to last 4 turns = 8 messages for speed)
-    MAX_HISTORY_TURNS = 4
+    """Build the full RAG prompt combining context, history, and question.
+    NOTE: SYSTEM_PROMPT is sent separately as the 'system' role — do NOT repeat it here."""
+    # Trim to last 1 turn (2 messages) to keep token count low
+    MAX_HISTORY_TURNS = 1
     history_text = ""
     if chat_history:
         recent_history = chat_history[-(MAX_HISTORY_TURNS * 2):]
         for role, text in recent_history:
-            history_text += f"{role}: {text}\n"
+            # Truncate long history messages to save tokens
+            truncated = text[:300] + "..." if len(text) > 300 else text
+            history_text += f"{role}: {truncated}\n"
 
-    # Compose the full RAG prompt
+    # Compose the user-facing RAG prompt (system prompt is sent separately)
     prompt = (
-        f"### SYSTEM INSTRUCTIONS ###\n{SYSTEM_PROMPT}\n\n"
-        f"### RETRIEVED DOCUMENT CONTEXT (from Knowledge Base) ###\n"
-        f"--- START OF DOCUMENT CONTEXT ---\n{context}\n--- END OF DOCUMENT CONTEXT ---\n\n"
+        f"### RETRIEVED DOCUMENT CONTEXT ###\n"
+        f"--- START ---\n{context}\n--- END ---\n\n"
         f"### CONVERSATION HISTORY ###\n{history_text}\n"
         f"### USER QUESTION ###\n{question}\n\n"
-        "### FINAL ANSWERING RULES ###\n"
-        "Step 1: Search ONLY within the DOCUMENT CONTEXT above for information directly "
-        "relevant to the question.\n"
-        "Step 2: CHECK FOR INACCURATE / OUT-OF-RANGE VALUES FIRST: "
-        "If the document defines a valid range or set of permitted values for the topic "
-        "(e.g., marks 0\u2013100, specific attendance thresholds, defined grade letters), "
-        "AND the user's question involves a value that falls OUTSIDE or violates that range, "
-        "respond with EXACTLY:\n"
-        "  '\u274c Inaccurate value: According to the uploaded document, [topic] must be "
-        "in the range [valid range from document]. The value you mentioned ([user value]) "
-        "is outside this defined range and is therefore invalid.'\n"
-        "  (Replace bracketed placeholders with actual values.)\n"
-        "Step 3: CHECK FOR MISSING INFORMATION: If the topic or scenario is simply not "
-        "mentioned anywhere in the document context at all, respond with EXACTLY:\n"
-        "  '\u26a0\ufe0f This specific information is not available in the uploaded document(s). "
-        "Please refer to your institution\'s official regulations.'\n"
-        "Step 4: Do NOT extrapolate, calculate, or infer. NEVER use external knowledge. "
-        "Your ONLY source of truth is the document context above."
+        "### RULES ###\n"
+        "1. Answer ONLY from the document context above.\n"
+        "2. If a value is out of range per the document, say: "
+        "'\u274c Inaccurate value: [explain from document]'\n"
+        "3. If not in the document, say: "
+        "'\u26a0\ufe0f Not available in the uploaded document(s).'\n"
+        "4. Never infer or use external knowledge."
     )
     return prompt
 
@@ -435,6 +371,35 @@ def handle_question(question):
     vectorstore = st.session_state.vectorstore
     client = st.session_state.groq_client
 
+    # Initialize rate limit tracking
+    if "request_timestamps" not in st.session_state:
+        st.session_state.request_timestamps = []
+    
+    # Clean old timestamps (older than 60 seconds)
+    current_time = time.time()
+    st.session_state.request_timestamps = [
+        ts for ts in st.session_state.request_timestamps 
+        if current_time - ts < 60
+    ]
+    
+    # Check if we're at the rate limit (30 requests per minute)
+    if len(st.session_state.request_timestamps) >= 30:
+        oldest_request = st.session_state.request_timestamps[0]
+        wait_time = 60 - (current_time - oldest_request)
+        if wait_time > 0:
+            st.warning(
+                f"⏳ **Rate limit protection active**\n\n"
+                f"Please wait **{int(wait_time)} seconds** before asking another question.\n\n"
+                f"💡 Free tier allows 30 requests per minute."
+            )
+            return
+    
+    # Enforce minimum 2 second delay between requests for stability
+    time_since_last = current_time - st.session_state.last_request_time
+    if time_since_last < 2:
+        wait_time = 2 - time_since_last
+        time.sleep(wait_time)
+    
     # RAG Step 1: Retrieve relevant context from vector DB knowledge base
     with st.spinner("🔍 Searching knowledge base..."):
         context = get_relevant_context(vectorstore, question, k=st.session_state.retrieval_k)
@@ -446,15 +411,17 @@ def handle_question(question):
     with st.chat_message("user", avatar="👤"):
         st.markdown(question)
 
-    # RAG Step 3: Generate response with typing animation (streaming)
+    # RAG Step 3: Generate response with automatic retry on rate limit
     answer = None
     max_retries = 3
+    retry_delays = [5, 10, 20]  # Exponential backoff: 5s, 10s, 20s
+    
     for attempt in range(max_retries):
         try:
             with st.chat_message("assistant", avatar="🎓"):
-                with st.spinner("Thinking..."):
-                    # Small delay to show spinner before streaming starts
-                    pass
+                if attempt > 0:
+                    st.info(f"🔄 Retry attempt {attempt + 1}/{max_retries}...")
+                
                 answer = st.write_stream(
                     stream_response(
                         client,
@@ -466,30 +433,48 @@ def handle_question(question):
                         st.session_state.max_tokens,
                     )
                 )
-            break
+                
+                # Success! Record the timestamp and break
+                st.session_state.request_timestamps.append(time.time())
+                st.session_state.last_request_time = time.time()
+                st.session_state.request_count += 1
+                break
+                
         except Exception as e:
             error_msg = str(e)
-            if "429" in error_msg or "rate_limit" in error_msg.lower() or "quota" in error_msg.lower():
+            
+            # Check if it's a rate limit error
+            if "429" in error_msg or "rate_limit" in error_msg.lower():
                 if attempt < max_retries - 1:
-                    wait_time = 10 * (attempt + 1)
-                    st.warning(f"⏳ Rate limited. Waiting {wait_time}s before retry ({attempt + 1}/{max_retries})...")
-                    time.sleep(wait_time)
+                    # Wait and retry
+                    delay = retry_delays[attempt]
+                    with st.spinner(f"⏳ Rate limited. Waiting {delay}s before retry ({attempt + 1}/{max_retries})..."):
+                        time.sleep(delay)
+                    continue
                 else:
+                    # Final attempt failed
                     st.error(
-                        "❌ **Rate limit reached.** Please wait a moment and try again.\n\n"
-                        "Free tier has rate limits. Try again shortly."
+                        "⚠️ **Rate limit exceeded - All retries exhausted**\n\n"
+                        "**What happened?**\n"
+                        "Your Groq API key has reached its rate limit.\n\n"
+                        "**Solutions:**\n"
+                        "1. ⏰ **Wait 60 seconds** and try again (rate limit resets every minute)\n"
+                        "2. 🔑 **Generate a NEW API key** at https://console.groq.com/keys\n"
+                        "3. 🎯 Use shorter questions to reduce token usage\n"
+                        "4. ⚙️ Reduce 'Max Tokens' to 512 in sidebar settings\n"
+                        "5. 💎 Consider upgrading to Groq Pro for higher limits\n\n"
+                        f"**Debug Info:**\n"
+                        f"- Requests tracked: {len(st.session_state.request_timestamps)}/30 in last minute\n"
+                        f"- Error: {error_msg[:200]}"
                     )
-                    return
-            elif "connection" in error_msg.lower() or "timeout" in error_msg.lower() or "connect" in error_msg.lower():
-                if attempt < max_retries - 1:
-                    wait_time = 5 * (attempt + 1)
-                    st.warning(f"⏳ Connection issue. Retrying in {wait_time}s ({attempt + 1}/{max_retries})...")
-                    time.sleep(wait_time)
-                else:
-                    st.error("❌ Connection error. Please check your internet and try again.")
+                    with st.expander("🔍 Full Error Details"):
+                        st.code(error_msg)
                     return
             else:
-                st.error(f"❌ Error: {error_msg}")
+                # Non-rate-limit error
+                st.error(f"❌ **API Error**\n\n{error_msg[:300]}")
+                with st.expander("🔍 Technical Details"):
+                    st.code(error_msg)
                 return
 
     if answer is None:
@@ -511,7 +496,7 @@ def handle_question(question):
 # ============================================================
 
 def main():
-    # Load environment variables
+    # Load .env for local dev; on Streamlit Cloud, secrets are loaded via st.secrets
     load_dotenv()
     
     st.set_page_config(
@@ -573,6 +558,12 @@ def main():
         st.session_state.last_tts_audio = None
     if "last_uploaded_file_ids" not in st.session_state:
         st.session_state.last_uploaded_file_ids = []
+    if "request_count" not in st.session_state:
+        st.session_state.request_count = 0
+    if "last_request_time" not in st.session_state:
+        st.session_state.last_request_time = time.time()
+    if "request_timestamps" not in st.session_state:
+        st.session_state.request_timestamps = []
 
     # ===== SIDEBAR =====
     with st.sidebar:
@@ -661,16 +652,13 @@ def main():
                         
                         progress_bar.empty()
                         st.success(
-                            f"✅ **Knowledge Base Built Successfully!**\n\n"
-                            f"📚 {len(docs)} document(s) → {len(text_chunks)} knowledge chunks\n\n"
-                            f"You can now ask questions!"
+                            f"✅ **Knowledge Base Built!** "
+                            f"{len(docs)} doc(s) → {len(text_chunks)} chunks. You can now ask questions!"
                         )
-                        st.balloons()
                         
                 except Exception as e:
                     progress_bar.empty()
                     st.error(f"❌ Error building knowledge base: {str(e)}\n\nPlease try again or upload different PDFs.")
-                    import traceback
                     with st.expander("🔍 Technical Details"):
                         st.code(traceback.format_exc())
             
@@ -721,8 +709,8 @@ def main():
                                     help="Lower = precise answers, Higher = creative answers")
             top_p = st.slider("Top-P", 0.0, 1.0, DEFAULT_TOP_P, 0.05,
                                help="Nucleus sampling threshold")
-            max_tokens = st.slider("Max Tokens", 256, 8192, DEFAULT_MAX_TOKENS, 256,
-                                   help="Max response length")
+            max_tokens = st.slider("Max Tokens", 256, 4096, DEFAULT_MAX_TOKENS, 256,
+                                   help="Max response length (lower = faster responses)")
 
         with st.expander("Retrieval Settings", expanded=False):
             retrieval_k = st.slider("Chunks to retrieve", 1, 10, RETRIEVAL_TOP_K, 1,
@@ -784,6 +772,30 @@ def main():
             f'</div>',
             unsafe_allow_html=True
         )
+        
+        # Show rate limit status
+        if "request_timestamps" in st.session_state:
+            current_time = time.time()
+            recent_requests = [
+                ts for ts in st.session_state.request_timestamps 
+                if current_time - ts < 60
+            ]
+            requests_remaining = 30 - len(recent_requests)
+            
+            if requests_remaining <= 5:
+                status_color = "#ff4444"  # Red
+            elif requests_remaining <= 15:
+                status_color = "#ffaa00"  # Orange
+            else:
+                status_color = "#44ff44"  # Green
+            
+            st.markdown(
+                f'<div class="status-row">'
+                f'<span class="status-label">API Requests</span>'
+                f'<span class="status-value" style="color: {status_color}">{requests_remaining}/30</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
         st.markdown("---")
 
@@ -803,10 +815,24 @@ def main():
         )
 
         st.markdown("")
-        if st.button("🗑️ Clear Chat", use_container_width=True):
-            st.session_state.chat_history = []
-            st.session_state.last_tts_audio = None
-            st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑️ Clear Chat", use_container_width=True):
+                st.session_state.chat_history = []
+                st.session_state.last_tts_audio = None
+                st.session_state.request_timestamps = []
+                st.rerun()
+        with col2:
+            if st.button("🔄 Reload API", use_container_width=True, help="Reload API key from .env"):
+                # Clear the cached client
+                get_groq_client.clear()
+                # Reload environment variables
+                load_dotenv(override=True)
+                # Reinitialize client
+                st.session_state.groq_client = get_groq_client()
+                st.session_state.request_timestamps = []
+                st.success("✅ API key reloaded!")
+                st.rerun()
 
     # ===== MAIN CHAT AREA =====
     st.markdown(
@@ -881,7 +907,7 @@ def main():
         unsafe_allow_html=True
     )
     # Zero-height iframe — runs JS in same-origin context to pin buttons onto pill bar
-    stcomp.html(
+    st.iframe(
         """
         <script>
         (function() {
@@ -935,8 +961,7 @@ def main():
         })();
         </script>
         """,
-        height=0,
-        scrolling=False
+        height=1
     )
     question = st.chat_input("Ask about your exams, grades or evaluation...")
 
