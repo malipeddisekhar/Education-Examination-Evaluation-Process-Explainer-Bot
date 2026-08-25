@@ -244,16 +244,21 @@ def load_vectorstore():
 @st.cache_resource(show_spinner=False)
 def get_groq_client():
     """Initialize and cache the Groq client.
-    Reads API key from st.secrets (Streamlit Cloud) or .env (local)."""
-    # Try Streamlit secrets first (cloud deployment), then .env (local)
-    api_key = st.secrets.get("GROQ_API_KEY", None) if hasattr(st, "secrets") else None
+    On Streamlit Cloud: reads from st.secrets.
+    Locally: reads from .env file."""
+    api_key = None
+    # Try Streamlit secrets (cloud) — gracefully skip if no secrets.toml exists locally
+    try:
+        api_key = st.secrets.get("GROQ_API_KEY", None)
+    except Exception:
+        pass  # No secrets.toml locally — fall through to .env
+    # Fall back to .env / environment variable
     if not api_key:
         api_key = os.getenv("GROQ_API_KEY")
     if not api_key or api_key == "your_groq_api_key_here":
         return None
     try:
-        client = Groq(api_key=api_key)
-        return client
+        return Groq(api_key=api_key)
     except Exception as e:
         st.error(f"❌ Failed to initialize Groq client: {str(e)}")
         return None
