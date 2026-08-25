@@ -10,6 +10,7 @@ showErrorDetails = false
 toolbarMode = "viewer"
 
 [server]
+fileWatcherType = "none"
 headless = true
 enableXsrfProtection = true
 maxUploadSize = 200
